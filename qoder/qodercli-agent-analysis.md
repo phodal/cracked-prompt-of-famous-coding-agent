@@ -6875,6 +6875,190 @@ After spec-verify-requirement completes, verify that `01-verify-requirement.md` 
 
 Lines from binary referencing Task tool, subagent_type, and agent routing:
 
+
+## 子代理类型
+
+| 子代理类型 | 用途 |
+|-----------|------|
+| `task-executor` | 代码实现、文件修改、命令执行、测试 |
+| `design-agent` | 复杂功能设计、正式文档需求 |
+| `code-reviewer` | 代码审查 |
+| `general-purpose` | 通用任务（默认） |
+
+### 专业子代理（Spec 系列）
+
+| 子代理 | 职责 |
+|--------|------|
+| `spec-requirement-analyser` | 需求分析、收集需求、确认细节 |
+| `spec-verify-requirement` | 需求验证、设计验证策略 |
+| `spec-hld-designer` | 系统高级设计 (HLD) |
+| `spec-lld-designer` | 详细设计 (LLD)、原子级任务拆分 |
+| `spec-design-reviewer` | 设计文档审查 |
+| `spec-implementer` | 代码实现 |
+| `spec-verifier` | 自动化测试和验证（仅验证，不修复代码） |
+
+---
+
+## Task Tool 使用规则
+
+### 基本规则
+
+1. **必须指定 subagent_type**：使用 Task tool 时必须指定 `subagent_type` 参数
+2. **subagent_type 固定值**：非 Spec 系列任务使用 `subagent_type="general-purpose"`
+3. **需用户批准**：禁止未经用户明确批准就调用 Task()
+
+### 任务类型与子代理选择
+
+```
+简单任务 → task-executor (直接实现)
+复杂/模糊需求 → design-agent (详细规划)
+```
+
+### 场景映射
+
+| 场景 | 子代理 |
+|------|--------|
+| 简单功能实现 | task-executor |
+| 复杂功能设计 | design-agent + task-executor |
+| 代码审查 | code-reviewer |
+| Bug 修复 | task-executor |
+
+---
+
+## 工作流流程
+
+### 完整规范流程 (Spec Workflow)
+
+```mermaid
+flowchart TD
+    Start([用户需求]) --> ReqAnalyst[阶段1: 需求分析<br/>spec-requirement-analyser]
+
+    ReqAnalyst --> ReqVerify[阶段2: 需求验证<br/>spec-verify-requirement]
+    ReqVerify --> ReqOK{需求是否完整?}
+
+    ReqOK -->|是| HLD[阶段3: 高级设计<br/>spec-hld-designer]
+    ReqOK -->|否| ReqAnalyst
+
+    HLD --> HLDReview[设计审查<br/>spec-design-reviewer]
+    HLDReview --> HLDOK{设计通过?}
+
+    HLDOK -->|是| LLD[阶段4: 详细设计<br/>spec-lld-designer]
+    HLDOK -->|否| HLD
+
+    LLD --> LLDReview[设计审查<br/>spec-design-reviewer]
+    LLDReview --> LLDOK{设计通过?}
+
+    LLDOK -->|是| Implement[阶段5: 代码实现<br/>spec-implementer]
+    LLDOK -->|否| LLD
+
+    Implement --> Verify[阶段6: 验证测试<br/>spec-verifier]
+    Verify --> VerifyOK{验证通过?}
+
+    VerifyOK -->|是| Done([完成])
+
+    VerifyOK -->|否| Fix[阶段7: 修复<br/>spec-implementer]
+    Fix --> Verify
+```
+
+### 各阶段详细说明
+
+#### 阶段1: 需求分析
+- 调用 `spec-requirement-analyser` 分析需求
+- 与用户确认细节
+- 输出结构化需求文档
+
+#### 阶段2: 需求验证
+- 调用 `spec-verify-requirement` 设计验证策略
+- 检查 `01-verify-requirement.md` 是否存在
+- 如不完整，重新调用并补充
+
+#### 阶段3: 高级设计
+1. 调用 `spec-hld-designer` 进行系统设计
+2. 调用 `spec-design-reviewer` 审查设计
+3. 如需修改，循环 1-2 步
+
+#### 阶段4: 详细设计
+1. 调用 `spec-lld-designer` 拆分原子级任务
+2. 调用 `spec-design-reviewer` 审查
+3. 如需修改，循环 1-2 步
+
+#### 阶段5: 实现
+1. 创建独立 Task 调用 `spec-implementer`
+2. 按设计文档实现代码
+
+#### 阶段6: 验证
+1. 调用 `spec-verifier` 执行自动化测试
+2. 分析验证报告
+3. 如失败，进入修复阶段
+
+#### 阶段7: 修复
+- 调用 `spec-implementer` 根据验证失败报告修复问题
+
+---
+
+## 快速任务流程
+
+```mermaid
+flowchart LR
+    A[用户请求] --> B{任务复杂度?}
+
+    B -->|简单| C[task-executor]
+    B -->|复杂| D[design-agent]
+
+    C --> E[实现完成]
+    D --> F[详细规划]
+    F --> G[task-executor]
+    G --> E
+```
+
+---
+
+## 重要约束
+
+1. **spec-verifier 职责**：
+   - 仅负责验证和报告
+   - 不修复代码
+   - 不调用 spec-implementer
+   - 返回控制权给 spec-leader
+
+2. **spec-leader 职责**：
+   - 禁止自行解释用户需求
+   - 所有需求必须经过 spec-requirement-analyser
+   - 决定工作流下一步
+
+3. **任务调度**：
+   - 所有子代理调用通过 Task tool
+   - subagent_type 固定为 "general-purpose"
+
+---
+
+## Task 调用示例
+
+### 任务执行
+```
+Task(
+  description="Implementation",
+  prompt="[清晰描述需要构建的内容]",
+  subagent_type="task-executor"
+)
+```
+
+### 设计代理
+```
+Task(
+  description="系统设计",
+  prompt="[基于需求进行系统设计]",
+  subagent_type="design-agent"
+)
+```
+
+### Spec 系列调用
+```
+Task(description="需求分析", prompt="...", subagent_type="general-purpose")
+# 实际代理类型由 spec-leader 在内部处理
+```
+
+
 ```
 capacity: gotypesaliashttpmuxgo121multipathtcprandautoseedtlsunsafeekmCased_LetterOther_LetterOther_NumberOther_SymbolSpacing_MarkCypro_MinoanMeetei_MayekPahawh_HmongSora_SompengSyloti_NagriBidi_ControlJoin_Controlauthenticatesession/loadEmailAddressDocDomainURLBashToolNameTaskToolNameReadToolNameEditToolNamecurrentNotesGlobToolNameGrepToolNamePUSH_PROMISECONTINUATIONimage/x-iconCookie.Valuehttp2debug=1http2debug=2push_promisedata_on_idleheaders_evendup_trailers100-continuerecv_goaway_content-typemoreSpecificstatus code Multi-StatusNot ModifiedUnauthorizedI'm a teapotNot Extendedproxyconnectruby-doc.orgredux.js.orgselenium.devbash-outputspwd -P >| %s\d\s*<<\s*\d<<-?\s*\\\w+tool_callingr_request_idcommand_typeinstructionstotalContextNotificationget_problemsGemfile.lockPipfile.lock_placeholderSubagentListtool_call_idtokens_savedPlanFilePathSpecFilePathExploreAgentnode_modulesFiles differBASH_TIMEOUTMaxTimeoutMsspecFilePathOpenAI GPT-5gpt-4.1-miniGPT 4.1 minigpt-4.1-nanoGPT 4.1 nanohttp+unix://succeedCount1 minute ago%d hours ago%d years agomessage_stopinput_tokenspartial_jsonrunner_is_cisdk_decisioncan_use_toolcontent_typedesign-agentimage is nil127.0.0.1:53no such hostunknown portCIDR addressinvalid portword forwardfeedback.txt?request_id=X-Request-IdX-Machine-OSX-Machine-IdpublicKeyStrLittleEndianinvalid kindbad kind: %sunknown nameSessionStartcomponent %qcreate-skillcreate-agentclose notifyremote errorc hs traffics hs trafficc ap traffics ap traffic PRIVATE KEYMime-VersionX-ImforwardsX-Powered-Bymax-forwardsMax-Forwards (sensitive)https://%s%s"${|stmts;}""${ stmts;}"&> redirectswhile <cond>until <cond>c-style fors@test "desc"continueFlagagentMessagesummary_modewaiting_mode\bpensando\b\brifletti\b
 /dev/vboxuserEnterPlanModeEnterSpecModebash_check_onterminal-authfinish_reasonsubagent_typecontext_usageWorktree Jobsremove [name]
